@@ -1,12 +1,27 @@
 {
+  "main": "electron/main.cjs",
+  
+
   "name": "output-json",
   "private": true,
   "version": "1.0.0",
   "type": "module",
+  "build": {
+    "appId": "uz.quotes.jsonbuilder",
+    "productName": "Market Builder",
+    "files": ["dist/**", "electron/**"],
+    "directories": { "output": "release" },
+    "win": { "target": "portable" }
+  },
+
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "app": "vite build && electron .",
+    "dist": "vite build && electron-builder --win portable"
   },
   "dependencies": {
     "react": "^19.0.0",
@@ -14,6 +29,9 @@
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^5.0.0",
-    "vite": "^7.0.0"
+    "electron": "^44.9.1",
+    "electron-builder": "^26.15.3",
+    "vite": "^7.0.0",
+    "vitest": "^5.0.5"
   }
 }

@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   COLUMNS, MARKETS, TYPES, VALUE_KEYS,
-  emptyRecord, fromCsvLine, fromJson, nowTimestamp, toCsvLine, validate, valueKeysFor,
+  emptyRecord, fromCsvLine, fromJson, normalizeIssueCode, nowTimestamp, toCsvLine, toJsonText,
+  validate, valueKeysFor,
 } from './schema.js';
 
 const STORAGE_KEY = 'output-json-records';
@@ -95,6 +96,7 @@ export default function App() {
     // hidden fields can never block saving.
     const clean = { ...draft };
     for (const k of VALUE_KEYS) if (!activeValueKeys.includes(k)) clean[k] = '';
+    if (clean.market === 'GOVT') clean.ticker = normalizeIssueCode(clean.ticker);
 
     const errs = validate(clean);
     setErrors(errs);
@@ -154,15 +156,31 @@ export default function App() {
     }
   }
 
-  function saveCsv(i) {
+  // Downloads one record as a file named like UZA000002255_Bid_2026-10-19-11-20-29.<ext>.
+  // Records that break the rules (e.g. imported ones) are refused, never cut or fixed silently.
+  function download(i, ext, text, mime) {
     const r = records[i];
-    const blob = new Blob([toCsvLine(r) + '\n'], { type: 'text/csv' });
+    const errs = Object.entries(validate(r));
+    if (errs.length) {
+      const list = errs.map(([k, msg]) => `${LABELS[k] || k}: ${msg}`).join('; ');
+      setNotice(`Record #${i + 1} not saved — ${list}. Use Edit to fix it.`);
+      return;
+    }
+    const blob = new Blob([text], { type: mime });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
     const stamp = r.timestamp.slice(0, 19).replace(/[:T]/g, '-');
-    a.download = `${r.instrument}_${r.type}_${stamp}.csv`.replace(/[\\/]/g, '-');
+    a.download = `${r.instrument}_${r.type}_${stamp}.${ext}`.replace(/[\\/]/g, '-');
     a.click();
     URL.revokeObjectURL(a.href);
+  }
+
+  function saveCsv(i) {
+    download(i, 'csv', toCsvLine(records[i]) + '\n', 'text/csv');
+  }
+
+  function saveJson(i) {
+    download(i, 'json', toJsonText([records[i]]), 'application/json');
   }
 
   const field = (key, props = {}) => (
@@ -177,8 +195,8 @@ export default function App() {
     <div className="app">
       <header className="topbar">
         <div>
-          <h1>Quote JSON Builder</h1>
-          <p>Enter quotes, trades and fixings and save them as CSV.</p>
+          <h1>Market Builder</h1>
+          <p>Enter quotes, trades and fixings and save them as CSV or JSON.</p>
         </div>
         <button className="primary add-button" onClick={openNew}>+ Add record</button>
       </header>
@@ -224,6 +242,7 @@ export default function App() {
                   <td>
                     <div className="row-actions">
                       <button onClick={() => saveCsv(i)}>Save CSV</button>
+                      <button onClick={() => saveJson(i)}>Save JSON</button>
                       <button onClick={() => edit(i)}>Edit</button>
                       <button onClick={() => duplicate(i)}>Copy</button>
                       <button className="danger" onClick={() => remove(i)}>Delete</button>
