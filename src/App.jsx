@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import {
-  COLUMNS, MARKETS, TYPES, VALUE_KEYS,
+  COLUMNS, MARKETS, typesFor, VALUE_KEYS, 
   emptyRecord, fromCsvLine, fromJson, normalizeIssueCode, nowTimestamp, toCsvLine, toJsonText,
   validate, valueKeysFor,
 } from './schema.js';
@@ -77,6 +77,15 @@ export default function App() {
     setErrors((errs) => ({ ...errs, [key]: undefined }));
   };
 
+  const setMarket = (e) =>{
+    const market = e.target.value;
+    setDraft((d) => {
+      const types = typesFor(market);
+      return {...d, market, type:types.includes(d.type) ? d.type: types[0]};
+    });
+    setError((errs) => ({...errs, market:undefined, type: undefined }));
+  };
+  
   function openNew() {
     setDraft(newDraft(draft));
     setEditIndex(null);
@@ -233,7 +242,7 @@ export default function App() {
                   <td>{r.market}</td>
                   <td><span className={`tag ${r.type.toLowerCase()}`}>{r.type}</span></td>
                   <td className="values">
-                    {VALUE_KEYS.filter((k) => r[k] !== '').map((k) => (
+                    {VALUE_KEYS.filter((k) => String(r[k] ?? '').trim() !== '').map((k) => (
                       <span key={k}>{LABELS[k]}: <b>{r[k]}</b></span>
                     ))}
                   </td>
@@ -269,7 +278,7 @@ export default function App() {
 
               <label className="field">
                 <span>Market</span>
-                <select value={draft.market} onChange={set('market')}>
+                <select value={draft.market} onChange={setMarket}>
                   {MARKETS.map((m) => <option key={m}>{m}</option>)}
                 </select>
               </label>
@@ -277,7 +286,7 @@ export default function App() {
               <label className="field">
                 <span>Type</span>
                 <select value={draft.type} onChange={set('type')}>
-                  {TYPES.map((t) => <option key={t}>{t}</option>)}
+                  {typesFor(draft.market).map((t) => <option key={t}>{t}</option>)}
                 </select>
               </label>
 

@@ -1,8 +1,11 @@
-// Column layout of output.csv (no header row, 18 columns, field_01..field_18).
+// Column layout of output.csv (no header row, 18 columns, field_01..field_18),
+// as used in production. It differs from the original requirements in
+// fields 12–16: GOVT Trade uses 11 (price) + 12 (yield), MMKT Trade and
+// FX Fixing share one rate in field 15, and 13, 14, 16 stay empty.
 // `key`   — internal name used by the app and the records saved in the browser.
-// `name`  — official field name from the output.csv requirements; used as the JSON key.
+// `name`  — field name; used as the JSON key.
 // `label` — text shown on screen.
-// `max`   — maximum length in characters (requirements §2); longer values are an error, never cut.
+// `max`   — maximum length in characters; longer values are an error, never cut.
 export const COLUMNS = [
   { key: 'instrument', name: 'instrument_id', label: 'ISIN', kind: 'text', max: 12 },        // field_01: UZA000002255, 1D, USD/UZS_TOM
   { key: 'ticker', name: 'instrument_code', label: 'Issue Code', kind: 'text', max: 7 },    // field_02: 24094UM, 1D, 3766
@@ -12,26 +15,45 @@ export const COLUMNS = [
   { key: 'bidPrice', name: 'bid_price', label: 'Bid price', kind: 'number', max: 8 },           // field_06
   { key: 'offerYield', name: 'offer_yield', label: 'Offer yield', kind: 'number', max: 8 },     // field_07
   { key: 'bidYield', name: 'bid_yield', label: 'Bid yield', kind: 'number', max: 8 },           // field_08
-  { key: 'offerRate', name: 'offer_rate', label: 'Offer rate', kind: 'number', max: 4 },        // field_09
-  { key: 'bidRate', name: 'bid_rate', label: 'Bid rate', kind: 'number', max: 4 },              // field_10
-  { key: 'tradePrice', name: 'trade_price', label: 'Trade price', kind: 'number', max: 8 },     // field_11
-  { key: 'fixingPrice', name: 'fixing_price', label: 'Fixing price', kind: 'number', max: 8 },  // field_12
-  { key: 'tradeYield', name: 'trade_yield', label: 'Trade yield', kind: 'number', max: 8 },     // field_13
-  { key: 'fixingYield', name: 'fixing_yield', label: 'Fixing yield', kind: 'number', max: 8 },  // field_14
-  { key: 'tradeRate', name: 'trade_rate', label: 'Trade rate', kind: 'number', max: 4 },        // field_15
-  { key: 'fixingRate', name: 'fixing_rate', label: 'Fixing rate', kind: 'number', max: 8 },     // field_16 — table says 4, but the spec's own FX example is 12874.02 (8); see PLAN.md
+  { key: 'offerRate', name: 'offer_rate', label: 'Offer rate', kind: 'number', max: 4 },        // field_09 — not used (MMKT Offer not confirmed)
+  { key: 'bidRate', name: 'bid_rate', label: 'Bid rate', kind: 'number', max: 4 },              // field_10 — not used (MMKT Bid not confirmed)
+  { key: 'tradePrice', name: 'trade_price', label: 'Trade price', kind: 'number', max: 8 },     // field_11: GOVT Trade, dirty price % of par
+  { key: 'tradeYield', name: 'trade_yield', label: 'Trade yield', kind: 'number', max: 8 },     // field_12: GOVT Trade, yield to maturity
+  { key: 'field13', name: 'field_13', label: 'Field 13', kind: 'number', max: 8 },              // field_13 — reserved, always empty
+  { key: 'field14', name: 'field_14', label: 'Field 14', kind: 'number', max: 8 },              // field_14 — reserved, always empty
+  { key: 'rate', name: 'rate', label: 'Rate', kind: 'number', max: 10 },                         // field_15: MMKT Trade rate, FX Fixing rate (e.g. 11903.15)
+  { key: 'field16', name: 'field_16', label: 'Field 16', kind: 'number', max: 4 },              // field_16 — reserved, always empty
   { key: 'volume', name: 'volume', label: 'Volume', kind: 'number', max: 12 },                   // field_17
   { key: 'timestamp', name: 'timestamp', label: 'Timestamp', kind: 'text', max: 25 },            // field_18: 2025-01-07T09:49:49+05:00
 ];
 
-export const MARKETS = ['GOVT', 'MMKT', 'FX'];
-export const TYPES = ['Bid', 'Offer', 'Trade', 'Fixing'];
+// The market/type combinations seen in production, and the value fields each
+// one fills (all of them are required). Any other combination is not written.
+// MMKT Bid / Offer / Fixing are not confirmed yet — add them here when they are.
+export const COMBOS = {
+  GOVT: {
+    Bid: ['bidPrice', 'bidYield'],
+    Offer: ['offerPrice', 'offerYield'],
+    Trade: ['tradePrice', 'tradeYield'],
+  },
+  MMKT: {
+    Trade: ['rate'],
+  },
+  FX: {
+    Fixing: ['rate'],
+  },
+};
 
-// Which value columns apply to a market/type pair. Bonds (GOVT) carry a
-// price and a yield; money market and FX carry a single rate.
+export const MARKETS = Object.keys(COMBOS);
+
+// Record types allowed for a market, e.g. typesFor('FX') -> ['Fixing'].
+export function typesFor(market) {
+  return Object.keys(COMBOS[market] ?? {});
+}
+
+// Value fields for a market/type pair; empty if the combination is not allowed.
 export function valueKeysFor(market, type) {
-  const prefix = type.toLowerCase();
-  return market === 'GOVT' ? [`${prefix}Price`, `${prefix}Yield`] : [`${prefix}Rate`];
+  return COMBOS[market]?.[type] ?? [];
 }
 
 export const VALUE_KEYS = COLUMNS.slice(4, 16).map((c) => c.key);
@@ -124,7 +146,18 @@ export function validate(record) {
   }
   if (record.market && record.type) {
     const keys = valueKeysFor(record.market, record.type);
-    if (keys.every((k) => !String(record[k]).trim())) errors[keys[0]] = 'Enter at least one value';
+    if (!keys.length) {
+      errors.type = `${record.market} ${record.type} is not allowed (allowed: ${typesFor(record.market).join(', ') || 'none'})`;
+    }
+    for (const k of keys) {
+      if (!errors[k] && !String(record[k] ?? '').trim()) errors[k] = 'Required';
+    }
+    // Value fields of other combinations must stay empty (e.g. an FX rate in field 16).
+    for (const k of VALUE_KEYS) {
+      if (keys.length && !keys.includes(k) && !errors[k] && String(record[k] ?? '').trim()) {
+        errors[k] = `Must be empty for ${record.market} ${record.type}`;
+      }
+    }
   }
   return errors;
 }
